@@ -858,7 +858,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#090d16] text-white">
+    <div className="flex h-screen overflow-hidden bg-[#090d16] text-white">
       {/* Sidebar - HIDDEN DURING PRINT */}
       <aside className="w-64 glassmorphism-sidebar flex flex-col justify-between p-6 shrink-0 no-print">
         <div>
