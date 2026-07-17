@@ -1,0 +1,15 @@
+FROM golang:1.22-alpine
+
+RUN apk add --no-cache git curl build-base
+
+# Install Air for Go hot-reloading
+RUN go install github.com/air-verse/air@latest
+
+WORKDIR /app
+
+# Copy go.mod and go.sum first
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Air configuration will watch and rebuild Go app
+CMD ["air", "-c", ".air.toml"]
