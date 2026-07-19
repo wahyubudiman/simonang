@@ -58,4 +58,4 @@ backend/.env.local
 tmp/
 
 # Docs
-docs/*
+docs/
