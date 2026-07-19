@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"simonang/internal/models"
@@ -130,14 +131,14 @@ func scanBudgetQuotas(db *gorm.DB) {
 				alert := models.Alert{
 					PRKID:     &prk.ID,
 					Tipe:      "BUDGET_CRITICAL",
-					Pesan:     fmt.Sprintf("Sisa pagu anggaran PRK %s kritis di bawah 10%%! (Tersisa: Rp %.0f dari Pagu: Rp %.0f)", prk.NomorPRK, sisaPagu, paguTotal),
+					Pesan:     fmt.Sprintf("Sisa pagu anggaran PRK %s kritis di bawah 10%%! (Tersisa: Rp %s dari Pagu: Rp %s)", prk.NomorPRK, formatThousandDot(sisaPagu), formatThousandDot(paguTotal)),
 					CreatedAt: time.Now(),
 				}
 				db.Create(&alert)
 				log.Printf("[EWS Engine] Alert Created: Budget critical (<10%%) for PRK %s", prk.NomorPRK)
 			} else {
 				// Update existing alert message in case numbers changed
-				existingAlert.Pesan = fmt.Sprintf("Sisa pagu anggaran PRK %s kritis di bawah 10%%! (Tersisa: Rp %.0f dari Pagu: Rp %.0f)", prk.NomorPRK, sisaPagu, paguTotal)
+				existingAlert.Pesan = fmt.Sprintf("Sisa pagu anggaran PRK %s kritis di bawah 10%%! (Tersisa: Rp %s dari Pagu: Rp %s)", prk.NomorPRK, formatThousandDot(sisaPagu), formatThousandDot(paguTotal))
 				db.Save(&existingAlert)
 			}
 		} else {
@@ -162,4 +163,27 @@ func scanBudgetQuotas(db *gorm.DB) {
 			}
 		}
 	}
+}
+
+// formatThousandDot formats numbers with dot as thousand separator (e.g. 104070130 -> "104.070.130")
+func formatThousandDot(n float64) string {
+	in := int64(n)
+	isNegative := false
+	if in < 0 {
+		isNegative = true
+		in = -in
+	}
+	str := strconv.FormatInt(in, 10)
+	var result []rune
+	length := len(str)
+	for i, c := range str {
+		if (length-i)%3 == 0 && i != 0 {
+			result = append(result, '.')
+		}
+		result = append(result, c)
+	}
+	if isNegative {
+		return "-" + string(result)
+	}
+	return string(result)
 }

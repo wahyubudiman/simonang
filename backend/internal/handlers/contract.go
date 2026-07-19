@@ -347,17 +347,41 @@ func (h *ContractHandler) ProcessApproval(c *gin.Context) {
 		return
 	}
 
+	userRoleVal, _ := c.Get("role")
+	userRoleStr, _ := userRoleVal.(string)
 	username, _ := c.Get("username")
 	usernameStr, _ := username.(string)
 	oldApprovalStatus := contract.ApprovalStatus
 
+	// Helper to verify dynamic RBAC permission for approval actions
+	hasPermission := func(perm string) bool {
+		if userRoleStr == "ADMIN" {
+			return true
+		}
+		var count int64
+		tx.Table("role_permissions").
+			Where("role_name = ? AND permission_code = ?", userRoleStr, perm).
+			Count(&count)
+		return count > 0
+	}
+
 	switch input.Action {
 	case "SUBMIT":
 		// User Bidang / Perencanaan mengajukan draft kontrak
+		if !hasPermission("contract:write") {
+			tx.Rollback()
+			c.JSON(http.StatusForbidden, gin.H{"error": "Akses ditolak: Anda tidak memiliki izin untuk mengajukan persetujuan kontrak (contract:write)"})
+			return
+		}
 		contract.ApprovalStatus = "PENDING_APPROVAL"
 		contract.ApprovalNotes = input.Notes
 	case "VERIFY":
 		// Keuangan memverifikasi dokumen tagihan/nota dinas
+		if !hasPermission("contract:approve_finance") {
+			tx.Rollback()
+			c.JSON(http.StatusForbidden, gin.H{"error": "Akses ditolak: Hanya bagian Keuangan yang memiliki hak verifikasi (contract:approve_finance)"})
+			return
+		}
 		if contract.ApprovalStatus != "PENDING_APPROVAL" {
 			tx.Rollback()
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Kontrak harus dalam status PENDING_APPROVAL untuk diverifikasi Keuangan"})
@@ -370,6 +394,11 @@ func (h *ContractHandler) ProcessApproval(c *gin.Context) {
 		}
 	case "APPROVE":
 		// Manajer menyetujui kontrak
+		if !hasPermission("contract:approve_manager") {
+			tx.Rollback()
+			c.JSON(http.StatusForbidden, gin.H{"error": "Akses ditolak: Hanya Manajer yang memiliki hak persetujuan final (contract:approve_manager)"})
+			return
+		}
 		if contract.ApprovalStatus != "VERIFIED_FINANCE" {
 			tx.Rollback()
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Kontrak harus dalam status VERIFIED_FINANCE untuk disetujui Manajer"})
@@ -382,6 +411,11 @@ func (h *ContractHandler) ProcessApproval(c *gin.Context) {
 		}
 	case "REJECT":
 		// Penolakan oleh Keuangan atau Manajer dengan catatan
+		if !hasPermission("contract:approve_finance") && !hasPermission("contract:approve_manager") {
+			tx.Rollback()
+			c.JSON(http.StatusForbidden, gin.H{"error": "Akses ditolak: Anda tidak memiliki hak akses untuk menolak persetujuan kontrak"})
+			return
+		}
 		contract.ApprovalStatus = "REJECTED"
 		contract.ApprovalNotes = input.Notes
 	default:
