@@ -56,3 +56,6 @@ backend/.env.local
 .cache/
 .temp/
 tmp/
+
+# Docs
+docs/*

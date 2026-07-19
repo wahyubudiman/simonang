@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -127,6 +128,10 @@ func (h *PRKHandler) CreatePRK(c *gin.Context) {
 		return
 	}
 
+	// Record Audit Log
+	newValStr := fmt.Sprintf("PRK %s (%s, Tahun %d, Pagu: Rp %.0f)", prk.NomorPRK, prk.JenisAnggaran, prk.Tahun, pagu.NilaiPagu)
+	RecordAuditLog(tx, c, "CREATE_PRK", "PRK", strconv.FormatUint(uint64(prk.ID), 10), "-", newValStr)
+
 	tx.Commit()
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -153,6 +158,12 @@ func (h *PRKHandler) UpdatePRK(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "PRK tidak ditemukan"})
 		return
 	}
+
+	oldPagu := 0.0
+	if len(prk.Pagus) > 0 {
+		oldPagu = prk.Pagus[0].NilaiPagu
+	}
+	oldValStr := fmt.Sprintf("PRK %s (%s, Tahun %d, Pagu: Rp %.0f)", prk.NomorPRK, prk.JenisAnggaran, prk.Tahun, oldPagu)
 
 	var input PRKUpdateInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -194,7 +205,9 @@ func (h *PRKHandler) UpdatePRK(c *gin.Context) {
 	}
 
 	// Handle Pagu Update and check Lock Pagu constraint
+	newPaguVal := oldPagu
 	if input.NilaiPagu > 0 {
+		newPaguVal = input.NilaiPagu
 		// Sum all existing contracts for this PRK
 		var kontrakTotal float64
 		for _, contract := range prk.Contracts {
@@ -236,6 +249,10 @@ func (h *PRKHandler) UpdatePRK(c *gin.Context) {
 		}
 	}
 
+	// Record Audit Log
+	newValStr := fmt.Sprintf("PRK %s (%s, Tahun %d, Pagu: Rp %.0f)", prk.NomorPRK, prk.JenisAnggaran, prk.Tahun, newPaguVal)
+	RecordAuditLog(tx, c, "UPDATE_PRK", "PRK", strconv.FormatUint(uint64(prk.ID), 10), oldValStr, newValStr)
+
 	tx.Commit()
 
 	c.JSON(http.StatusOK, gin.H{
@@ -252,17 +269,31 @@ func (h *PRKHandler) DeletePRK(c *gin.Context) {
 		return
 	}
 
+	tx := h.DB.Begin()
+
 	var prk models.PRK
-	if err := h.DB.First(&prk, prkID).Error; err != nil {
+	if err := tx.Preload("Pagus").First(&prk, prkID).Error; err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusNotFound, gin.H{"error": "PRK tidak ditemukan"})
 		return
 	}
 
+	oldPagu := 0.0
+	if len(prk.Pagus) > 0 {
+		oldPagu = prk.Pagus[0].NilaiPagu
+	}
+	oldValStr := fmt.Sprintf("PRK %s (%s, Pagu: Rp %.0f)", prk.NomorPRK, prk.JenisAnggaran, oldPagu)
+
 	// Perform Delete (Cascade rules in models.go will delete Pagus and Contracts)
-	if err := h.DB.Delete(&prk).Error; err != nil {
+	if err := tx.Delete(&prk).Error; err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete PRK"})
 		return
 	}
 
+	// Record Audit Log
+	RecordAuditLog(tx, c, "DELETE_PRK", "PRK", strconv.FormatUint(uint64(prk.ID), 10), oldValStr, "-")
+
+	tx.Commit()
 	c.JSON(http.StatusOK, gin.H{"message": "PRK dan semua data terkait berhasil dihapus"})
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -116,16 +117,20 @@ func (h *ContractHandler) CreateContract(c *gin.Context) {
 
 	// Create new contract record
 	contract := models.Contract{
-		PRKID:          input.PRKID,
-		NomorKontrak:   input.NomorKontrak,
-		JudulPekerjaan: input.JudulPekerjaan,
-		Vendor:         input.Vendor,
-		NilaiKontrak:   input.NilaiKontrak,
-		StatusProses:   "PROSES", // Default status
-		TglND:          input.TglND,
-		NoND:           input.NoND,
-		UserBidang:     input.UserBidang,
-		HariKerja:      input.HariKerja,
+		PRKID:             input.PRKID,
+		NomorKontrak:      input.NomorKontrak,
+		JudulPekerjaan:    input.JudulPekerjaan,
+		Vendor:            input.Vendor,
+		NilaiKontrak:      input.NilaiKontrak,
+		StatusProses:      "PROSES", // Default status
+		TglND:             input.TglND,
+		NoND:              input.NoND,
+		UserBidang:        input.UserBidang,
+		HariKerja:         input.HariKerja,
+		ApprovalStatus:    "DRAFT", // Multi-level approval starts at DRAFT
+		ApprovalNotes:     "",
+		ApprovedByFinance: "",
+		ApprovedByManager: "",
 	}
 
 	if err := tx.Create(&contract).Error; err != nil {
@@ -133,6 +138,10 @@ func (h *ContractHandler) CreateContract(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "Nomor Kontrak sudah terdaftar"})
 		return
 	}
+
+	// Record Audit Log
+	newValStr := fmt.Sprintf("Kontrak %s (Rp %.0f, Vendor: %s, Bidang: %s)", contract.NomorKontrak, contract.NilaiKontrak, contract.Vendor, contract.UserBidang)
+	RecordAuditLog(tx, c, "CREATE_CONTRACT", "Contract", strconv.FormatUint(uint64(contract.ID), 10), "-", newValStr)
 
 	tx.Commit()
 	c.JSON(http.StatusCreated, contract)
@@ -155,6 +164,8 @@ func (h *ContractHandler) UpdateContract(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Kontrak tidak ditemukan"})
 		return
 	}
+
+	oldValStr := fmt.Sprintf("Kontrak %s (Rp %.0f, Status: %s, Approval: %s)", contract.NomorKontrak, contract.NilaiKontrak, contract.StatusProses, contract.ApprovalStatus)
 
 	var input UpdateContractInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -266,6 +277,10 @@ func (h *ContractHandler) UpdateContract(c *gin.Context) {
 		return
 	}
 
+	// Record Audit Log
+	newValStr := fmt.Sprintf("Kontrak %s (Rp %.0f, Status: %s, Approval: %s)", contract.NomorKontrak, contract.NilaiKontrak, contract.StatusProses, contract.ApprovalStatus)
+	RecordAuditLog(tx, c, "UPDATE_CONTRACT", "Contract", strconv.FormatUint(uint64(contract.ID), 10), oldValStr, newValStr)
+
 	tx.Commit()
 	c.JSON(http.StatusOK, contract)
 }
@@ -279,18 +294,117 @@ func (h *ContractHandler) DeleteContract(c *gin.Context) {
 		return
 	}
 
+	tx := h.DB.Begin()
+
 	var contract models.Contract
-	if err := h.DB.First(&contract, contractID).Error; err != nil {
+	if err := tx.First(&contract, contractID).Error; err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusNotFound, gin.H{"error": "Kontrak tidak ditemukan"})
 		return
 	}
 
-	if err := h.DB.Delete(&contract).Error; err != nil {
+	oldValStr := fmt.Sprintf("Kontrak %s (Rp %.0f, Vendor: %s)", contract.NomorKontrak, contract.NilaiKontrak, contract.Vendor)
+
+	if err := tx.Delete(&contract).Error; err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus kontrak"})
 		return
 	}
 
+	// Record Audit Log
+	RecordAuditLog(tx, c, "DELETE_CONTRACT", "Contract", strconv.FormatUint(uint64(contract.ID), 10), oldValStr, "-")
+
+	tx.Commit()
 	c.JSON(http.StatusOK, gin.H{"message": "Kontrak berhasil dihapus"})
+}
+
+type ProcessApprovalInput struct {
+	Action string `json:"action" binding:"required"` // 'SUBMIT', 'VERIFY', 'APPROVE', 'REJECT'
+	Notes  string `json:"notes"`
+}
+
+// ProcessApproval handles multi-level approval workflow state machine
+func (h *ContractHandler) ProcessApproval(c *gin.Context) {
+	idParam := c.Param("id")
+	contractID, err := strconv.ParseUint(idParam, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID Kontrak tidak valid"})
+		return
+	}
+
+	var input ProcessApprovalInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tx := h.DB.Begin()
+
+	var contract models.Contract
+	if err := tx.First(&contract, contractID).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusNotFound, gin.H{"error": "Kontrak tidak ditemukan"})
+		return
+	}
+
+	username, _ := c.Get("username")
+	usernameStr, _ := username.(string)
+	oldApprovalStatus := contract.ApprovalStatus
+
+	switch input.Action {
+	case "SUBMIT":
+		// User Bidang / Perencanaan mengajukan draft kontrak
+		contract.ApprovalStatus = "PENDING_APPROVAL"
+		contract.ApprovalNotes = input.Notes
+	case "VERIFY":
+		// Keuangan memverifikasi dokumen tagihan/nota dinas
+		if contract.ApprovalStatus != "PENDING_APPROVAL" {
+			tx.Rollback()
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Kontrak harus dalam status PENDING_APPROVAL untuk diverifikasi Keuangan"})
+			return
+		}
+		contract.ApprovalStatus = "VERIFIED_FINANCE"
+		contract.ApprovedByFinance = usernameStr
+		if input.Notes != "" {
+			contract.ApprovalNotes = input.Notes
+		}
+	case "APPROVE":
+		// Manajer menyetujui kontrak
+		if contract.ApprovalStatus != "VERIFIED_FINANCE" {
+			tx.Rollback()
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Kontrak harus dalam status VERIFIED_FINANCE untuk disetujui Manajer"})
+			return
+		}
+		contract.ApprovalStatus = "APPROVED_MANAGER"
+		contract.ApprovedByManager = usernameStr
+		if input.Notes != "" {
+			contract.ApprovalNotes = input.Notes
+		}
+	case "REJECT":
+		// Penolakan oleh Keuangan atau Manajer dengan catatan
+		contract.ApprovalStatus = "REJECTED"
+		contract.ApprovalNotes = input.Notes
+	default:
+		tx.Rollback()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Aksi approval tidak dikenal (Gunakan: SUBMIT, VERIFY, APPROVE, atau REJECT)"})
+		return
+	}
+
+	if err := tx.Save(&contract).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan status approval"})
+		return
+	}
+
+	// Record Audit Log
+	newValStr := fmt.Sprintf("Status Approval: %s (Oleh: %s, Catatan: %s)", contract.ApprovalStatus, usernameStr, contract.ApprovalNotes)
+	RecordAuditLog(tx, c, "APPROVAL_CONTRACT_"+input.Action, "Contract", strconv.FormatUint(uint64(contract.ID), 10), oldApprovalStatus, newValStr)
+
+	tx.Commit()
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Status persetujuan kontrak berhasil diperbarui",
+		"contract": contract,
+	})
 }
 
 // GetPRKSummary returns all PRKs with aggregation calculations (compatibility)

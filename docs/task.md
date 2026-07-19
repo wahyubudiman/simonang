@@ -1,15 +1,26 @@
-# Task List - Si Monang: Sub-Menu Konfigurasi & Manajemen Peran (Sprint 5)
+# Task List - Si Monang: Fase 1 & Fase 2 (Compliance & Analitik)
 
-- [x] **Model Database Role Dinamis**
-  - [x] Tambahkan struct `Role` di `backend/internal/models/models.go`
-  - [x] Migrasikan model `Role` di `backend/main.go`
-  - [x] Buat seeder data peran bawaan (`ADMIN`, `PERENCANAAN`, `KEUANGAN`, `MANAJER`) di `backend/main.go`
-- [x] **API CRUD Peran (Go Backend)**
-  - [x] Implementasikan API CRUD untuk peran di `backend/internal/handlers/rbac.go`
-  - [x] Daftarkan rute API baru (`GET/POST/PUT/DELETE /api/rbac/roles`) di `backend/main.go`
-- [x] **Penyelarasan Menu & Pengaturan Peran (React Frontend)**
-  - [x] Implementasikan grup menu lipat (collapsible dropdown) **Konfigurasi Akses** di sidebar `frontend/src/App.jsx`
-  - [x] Buat tab menu baru **Pengaturan Peran** (tab: `roles`) beserta form modal tambah/edit di `frontend/src/App.jsx`
-  - [x] Sesuaikan pemilihan peran user (dropdown) dan kolom matriks RBAC agar dinamis mengambil data dari API
-- [x] **Verifikasi & Pengujian**
-  - [x] Lakukan pengujian perubahan nama peran dinamis dan verifikasi transaksional database
+- [x] **Fase 1: Compliance & Kontrol Internal**
+  - [x] **Model Database Audit, Revision & Approval**
+    - [x] Tambahkan struct `AuditLog` di `backend/internal/models/models.go`
+    - [x] Tambahkan struct `PaguRevision` di `backend/internal/models/models.go`
+    - [x] Perbarui struct `Contract` dengan kolom `ApprovalStatus`, `ApprovalNotes`, `ApprovedByFinance`, `ApprovedByManager`
+    - [x] Migrasikan model baru & seeder permission di `backend/main.go`
+  - [x] **Audit Trail Logging Engine (Go Backend)**
+    - [x] Buat utilitas & handler `backend/internal/handlers/audit.go` (`RecordAuditLog` & `GET /api/audit-logs`)
+    - [x] Sematkan pencatatan audit log otomatis pada PRK, Pagu, Kontrak, User, dan RBAC handlers
+  - [x] **Multi-level Approval Workflow Engine (Go Backend)**
+    - [x] Implementasikan handler `POST /api/contracts/:id/approval` di `contract.go` (`SUBMIT`, `VERIFY`, `APPROVE`, `REJECT`)
+    - [x] Daftarkan hak akses `audit:read`, `contract:approve_finance`, `contract:approve_manager`, `pagu:revise` di seeder DB
+- [x] **Fase 2: Perencanaan Revisi & Analitik Eksekutif**
+  - [x] **Snapshot Revisi Pagu / Adendum Engine (Go Backend)**
+    - [x] Buat handler `backend/internal/handlers/revision.go` (`POST /api/prks/:id/revise` & `GET /api/prks/:id/revisions`)
+    - [x] Daftarkan rute API baru di `backend/main.go`
+  - [x] **Frontend React UI Integration**
+    - [x] Widget **Heatmap Penyerapan Per Bidang** di Dashboard `frontend/src/App.jsx`
+    - [x] Lencana status persetujuan, tombol aksi Verifikasi Keuangan, Persetujuan Manajer, & Catatan Penolakan di Monitoring Kontrak
+    - [x] Tombol **Revisi Pagu (Adendum)** & Modal Riwayat Revisi Pagu di Rekap PRK
+    - [x] Sub-menu **Log Audit Transaksi** di bawah Konfigurasi Akses untuk meninjau log mutasi
+- [x] **Verifikasi & Pengujian Lokal**
+  - [x] Verifikasi kompilasi Go backend `go build` (Sukses)
+  - [x] Verifikasi build React frontend `pnpm build` (Sukses)

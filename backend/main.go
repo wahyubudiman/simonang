@@ -48,7 +48,7 @@ func main() {
 	log.Println("Database connection established successfully.")
 
 	// 2. Database Auto-Migration
-	err = db.AutoMigrate(&models.User{}, &models.PRK{}, &models.Pagu{}, &models.Contract{}, &models.Alert{}, &models.Permission{}, &models.RolePermission{}, &models.Role{})
+	err = db.AutoMigrate(&models.User{}, &models.PRK{}, &models.Pagu{}, &models.Contract{}, &models.Alert{}, &models.Permission{}, &models.RolePermission{}, &models.Role{}, &models.AuditLog{}, &models.PaguRevision{})
 	if err != nil {
 		log.Fatalf("Failed to run database migrations: %v", err)
 	}
@@ -80,6 +80,8 @@ func main() {
 	prkHandler := handlers.NewPRKHandler(db)
 	alertHandler := handlers.NewAlertHandler(db)
 	rbacHandler := handlers.NewRBACHandler(db)
+	auditHandler := handlers.NewAuditHandler(db)
+	revisionHandler := handlers.NewRevisionHandler(db)
 
 	// Start EWS Goroutine Engine
 	handlers.StartEWSEngine(db)
@@ -104,7 +106,13 @@ func main() {
 			// GET Alerts (EWS alerts for all authenticated users)
 			protected.GET("/alerts", alertHandler.GetAlerts)
 
-			// PRK CRUD (Protected by dynamic PermissionMiddleware)
+			// Audit Logs Endpoint
+			protected.GET("/audit-logs", 
+				middleware.PermissionMiddleware(db, "audit:read"), 
+				auditHandler.GetAuditLogs,
+			)
+
+			// PRK CRUD & Revisions (Protected by dynamic PermissionMiddleware)
 			protected.GET("/prks", 
 				middleware.PermissionMiddleware(db, "prk:read"), 
 				prkHandler.GetPRKs,
@@ -121,8 +129,16 @@ func main() {
 				middleware.PermissionMiddleware(db, "prk:write"), 
 				prkHandler.DeletePRK,
 			)
+			protected.POST("/prks/:id/revise", 
+				middleware.PermissionMiddleware(db, "pagu:revise"), 
+				revisionHandler.RevisePagu,
+			)
+			protected.GET("/prks/:id/revisions", 
+				middleware.PermissionMiddleware(db, "prk:read"), 
+				revisionHandler.GetPaguRevisions,
+			)
 
-			// Contracts CRUD (Protected by dynamic PermissionMiddleware)
+			// Contracts CRUD & Approval Workflow (Protected by dynamic PermissionMiddleware)
 			protected.GET("/contracts", 
 				middleware.PermissionMiddleware(db, "contract:read"), 
 				contractHandler.GetContracts,
@@ -139,6 +155,7 @@ func main() {
 				middleware.PermissionMiddleware(db, "contract:write"), 
 				contractHandler.DeleteContract,
 			)
+			protected.POST("/contracts/:id/approval", contractHandler.ProcessApproval)
 
 			// Users CRUD (Protected by dynamic PermissionMiddleware)
 			protected.GET("/users", 
@@ -260,10 +277,14 @@ func seedMockData(db *gorm.DB) {
 		permissions := []models.Permission{
 			{"prk:read", "Membaca Rencana Kerja (PRK)", "PRK & Pagu"},
 			{"prk:write", "Membuat/Mengubah/Menghapus PRK", "PRK & Pagu"},
+			{"pagu:revise", "Melakukan Revisi Pagu (Adendum)", "PRK & Pagu"},
 			{"contract:read", "Membaca Data Kontrak Kerja", "Kontrak"},
 			{"contract:write", "Membuat/Mengubah/Menghapus Kontrak", "Kontrak"},
+			{"contract:approve_finance", "Verifikasi Keuangan Kontrak", "Kontrak"},
+			{"contract:approve_manager", "Persetujuan Manajer Kontrak", "Kontrak"},
 			{"user:manage", "Mengelola Data User (RBAC)", "Pengaturan"},
 			{"rbac:manage", "Mengelola Matriks RBAC", "Pengaturan"},
+			{"audit:read", "Membaca Log Audit Transaksi", "Pengaturan"},
 		}
 		db.Create(&permissions)
 
@@ -271,14 +292,17 @@ func seedMockData(db *gorm.DB) {
 			// PERENCANAAN
 			{"PERENCANAAN", "prk:read"},
 			{"PERENCANAAN", "prk:write"},
+			{"PERENCANAAN", "pagu:revise"},
 			{"PERENCANAAN", "contract:read"},
 			{"PERENCANAAN", "contract:write"},
 			// KEUANGAN
 			{"KEUANGAN", "prk:read"},
 			{"KEUANGAN", "contract:read"},
+			{"KEUANGAN", "contract:approve_finance"},
 			// MANAJER
 			{"MANAJER", "prk:read"},
 			{"MANAJER", "contract:read"},
+			{"MANAJER", "contract:approve_manager"},
 		}
 		db.Create(&rolePermissions)
 		log.Println("Seeded default permissions & RBAC matrix successfully.")

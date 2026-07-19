@@ -1,28 +1,22 @@
-# Rencana Implementasi: Sub-Menu Konfigurasi & Manajemen Peran (Sprint 5)
+# Rencana Implementasi: Fase 1 & Fase 2 (Compliance, Multi-level Approval, Revisi Pagu & Heatmap)
 
-Rencana ini memuat langkah-langkah teknis untuk mengelompokkan menu manajemen pengguna dan RBAC menjadi satu kesatuan sub-menu **"Konfigurasi Akses"**, serta menambahkan fitur **CRUD Peran / Role** (termasuk mengubah nama peran secara dinamis).
+Rencana ini memuat langkah-langkah teknis untuk mengimplementasikan fitur **Fase 1 (Kepatuhan Hukum & Kontrol Internal)** dan **Fase 2 (Perencanaan Revisi & Analitik Eksekutif)** pada aplikasi **Si Monang**.
 
 ---
 
 ## User Review Required
 
 > [!IMPORTANT]
-> **Penyempurnaan Struktur Menu & Manajemen Peran Dinamis**
+> **Struktur Utama & Alur Kerja Baru**
 > 
-> 1.  **Pengelompokan Menu (Frontend)**:
->     *   Membuat menu kolaps/dropdown **"Konfigurasi Akses"** di sidebar.
->     *   Sub-menu di dalamnya:
->         *   👥 **Daftar Pengguna**: Mengelola data user (sebelumnya "Pengaturan User").
->         *   🔒 **Matriks RBAC**: Mengelola centang izin (sebelumnya "Matriks RBAC" menu utama).
->         *   🏷️ **Pengaturan Peran**: Menu baru untuk mengelola nama peran (Role) dan deskripsinya.
-> 2.  **Manajemen Peran Dinamis (Backend)**:
->     *   Membuat tabel `roles` di database.
->     *   Saat nama peran diubah (misal: `PERENCANAAN` menjadi `DIVISI PERENCANAAN`), sistem secara otomatis (transaksional) mengupdate:
->         1.  Nama peran di tabel `roles`.
->         2.  Kolom role milik user di tabel `users`.
->         3.  Kolom role di pemetaan izin tabel `role_permissions`.
-> 3.  **Dropdown & Kolom Dinamis**:
->     *   Pemilihan role saat membuat user baru dan nama kolom pada matriks RBAC tidak lagi menggunakan nilai statis, melainkan membaca data riil dari API `/api/rbac/roles`.
+> 1. **Fase 1: Compliance & Kontrol Internal**
+>    * **Immutable Audit Trail Log (`audit_logs`)**: Menambahkan pencatatan transaksi otomatis (stempel waktu, user, role, IP address, aksi, data lama vs data baru) untuk semua mutasi PRK, Pagu, Kontrak, dan Otorisasi.
+>    * **Multi-level Approval Workflow**: Mengubah alur persetujuan kontrak menjadi 4 tahap verifikasi berjenjang:
+>      `DRAFT` $\rightarrow$ `PENDING_APPROVAL` (Diajukan Bidang/Perencanaan) $\rightarrow$ `VERIFIED_FINANCE` (Diverifikasi Keuangan) $\rightarrow$ `APPROVED_MANAGER` (Disetujui Manajer) $\rightarrow$ `SELESAI` (Realisasi Bayar). Termasuk fitur penolakan (`REJECTED`) dengan catatan perbaikan.
+> 
+> 2. **Fase 2: Perencanaan Revisi & Analitik**
+>    * **Manajemen Revisi Pagu / Adendum (`pagu_revisions`)**: Mengakomodir snapshot revisi anggaran (APBD-Perubahan / Adendum) yang menyimpan histori sisa/pagu sebelum dan sesudah revisi beserta nomor SK/Revisi dan alasan pergeseran.
+>    * **Heatmap Penyerapan Per Bidang/Satker**: Komponen visualisasi interaktif pada Dashboard yang memeringkatkan rasio penyerapan dari bidang terkritis (merah) hingga tertinggi (hijau) secara *real-time*.
 
 ---
 
@@ -31,49 +25,62 @@ Rencana ini memuat langkah-langkah teknis untuk mengelompokkan menu manajemen pe
 ### [Backend - Go Service]
 
 #### [MODIFY] [models.go](file:///Users/wahyubudiman/Documents/prototype/pku_zulfirman/backend/internal/models/models.go)
-*   Menambahkan struct `Role` untuk representasi tabel peran di database.
+* Menambahkan struct `AuditLog` untuk tabel log mutasi permanen.
+* Menambahkan struct `PaguRevision` untuk tabel histori revisi pagu/adendum.
+* Memperbarui struct `Contract` dengan kolom status approval: `ApprovalStatus`, `ApprovalNotes`, `ApprovedByFinance`, `ApprovedByManager`.
 
-#### [MODIFY] [rbac.go (Handlers)](file:///Users/wahyubudiman/Documents/prototype/pku_zulfirman/backend/internal/handlers/rbac.go)
-*   Menambahkan fungsi handler CRUD peran:
-    *   `GET /api/rbac/roles` -> List seluruh peran.
-    *   `POST /api/rbac/roles` -> Tambah peran baru.
-    *   `PUT /api/rbac/roles/:name` -> Update nama peran & deskripsi (transaksional update user & permissions).
-    *   `DELETE /api/rbac/roles/:name` -> Hapus peran (dihambat jika masih ada user terikat).
+#### [NEW] [audit.go (Middleware / Utility)](file:///Users/wahyubudiman/Documents/prototype/pku_zulfirman/backend/internal/handlers/audit.go)
+* Fungsi pembantu `RecordAuditLog(tx, userID, username, role, action, entity, entityID, oldValue, newValue, ip)` untuk mencatat log otomatis dalam setiap transaksi.
+* Handler API `GET /api/audit-logs` untuk melihat daftar log audit.
+
+#### [NEW] [revision.go (Handlers)](file:///Users/wahyubudiman/Documents/prototype/pku_zulfirman/backend/internal/handlers/revision.go)
+* Handler `POST /api/prks/:id/revise` untuk menyimpan revisi pagu anggaran (adendum/APBD-P) dengan snapshot nilai lama vs baru.
+* Handler `GET /api/prks/:id/revisions` untuk membaca riwayat revisi PRK.
+
+#### [MODIFY] [contract.go (Handlers)](file:///Users/wahyubudiman/Documents/prototype/pku_zulfirman/backend/internal/handlers/contract.go)
+* Menambahkan handler `POST /api/contracts/:id/approval` untuk memproses aksi workflow (`SUBMIT`, `VERIFY`, `APPROVE`, `REJECT`).
+* Menyematkan pencatatan `RecordAuditLog` pada pembuatan, perubahan, penghapusan, dan persetujuan kontrak.
+
+#### [MODIFY] [prk.go (Handlers)](file:///Users/wahyubudiman/Documents/prototype/pku_zulfirman/backend/internal/handlers/prk.go)
+* Menyematkan `RecordAuditLog` pada aksi CRUD PRK dan Pagu.
 
 #### [MODIFY] [main.go](file:///Users/wahyubudiman/Documents/prototype/pku_zulfirman/backend/main.go)
-*   Mendaftarkan migrasi model `Role`.
-*   Mendaftarkan seeder awal untuk roles (`ADMIN`, `PERENCANAAN`, `KEUANGAN`, `MANAJER`) dan mengaitkannya dengan seeder permissions.
-*   Mendaftarkan endpoint CRUD role baru.
+* Mendaftarkan model `AuditLog` dan `PaguRevision` di `AutoMigrate`.
+* Menambahkan permission baru (`audit:read`, `contract:approve_finance`, `contract:approve_manager`, `pagu:revise`) ke dalam seeder database.
+* Mendaftarkan rute API baru untuk Audit Logs, Approval Workflow, dan Revisi Pagu.
 
 ---
 
 ### [Frontend - React / Vite]
 
 #### [MODIFY] [App.jsx](file:///Users/wahyubudiman/Documents/prototype/pku_zulfirman/frontend/src/App.jsx)
-*   **Menu Navigasi Sidebar**:
-    *   Mengimplementasikan menu collapsible dropdown **"Konfigurasi Akses"** dengan ikon `Settings`.
-    *   Sub-menu: Daftar Pengguna, Matriks RBAC, dan Pengaturan Peran.
-*   **Dropdown Dinamis**:
-    *   Mengambil daftar role dari backend untuk kolom tabel Matriks RBAC dan opsi dropdown tambah/edit user.
-*   **Halaman Pengaturan Peran (Tab: `roles`)**:
-    *   Menampilkan tabel peran, deskripsi, serta tombol edit/hapus.
-    *   Menyediakan formulir modal untuk tambah/edit nama peran.
+* **Heatmap Penyerapan Bidang**: Membuat widget visual Heatmap Card Grid di Dashboard yang menampilkan persentase penyerapan per Bidang Pengusul (Pemeliharaan, SCADA, KKU, Transaksi Energi, K3).
+* **Multi-level Approval UI**:
+  * Menambahkan badge status persetujuan pada tabel Monitoring.
+  * Menambahkan tombol aksi khusus untuk role Keuangan (**Verifikasi**) dan Manajer (**Setujui**) serta tombol **Tolak** dengan modal alasan perbaikan.
+* **Fitur Revisi Pagu / Adendum**:
+  * Menambahkan tombol **Revisi Pagu** di tabel Rekap PRK.
+  * Modal formulir input revisi pagu (Nilai Baru, Nomor SK/Adendum, Alasan Pergeseran).
+  * Modal viewer **Riwayat Revisi Anggaran**.
+* **Sub-menu Log Audit**:
+  * Menambahkan sub-menu **Log Audit Transaksi** di bawah dropdown Konfigurasi Akses untuk meninjau riwayat mutasi anggaran secara transparan.
 
 ---
 
 ## Verification Plan
 
 ### Automated Tests
-Verifikasi kompilasi backend Go:
+Verifikasi kompilasi backend Go dan build React frontend:
 ```bash
 cd backend && go build -o tmp/main main.go
+cd ../frontend && pnpm build
 ```
 
 ### Manual Verification
-1.  **Pengujian Tampilan Navigasi**: Pastikan menu "Konfigurasi Akses" ber-animasi buka/tutup dengan lancar saat diklik.
-2.  **Pengujian Ubah Peran (Uji Kasus Kritis)**:
-    *   Login sebagai admin, buat peran baru bernama `TESTER`.
-    *   Beri centang beberapa izin pada tabel **Matriks RBAC** untuk peran `TESTER`.
-    *   Daftarkan user baru dengan peran `TESTER`.
-    *   Masuk to **Pengaturan Peran**, ubah nama `TESTER` menjadi `QUALITY CONTROL`.
-    *   Verifikasi di database/UI bahwa user baru tadi sekarang otomatis memiliki peran `QUALITY CONTROL` dan daftar izin matriksnya berpindah dengan sukses tanpa ada data yang hilang.
+1. **Pengujian Audit Trail**: Lakukan penambahan/edit PRK dan Kontrak, lalu buka tab **Log Audit Transaksi** sebagai admin untuk memastikan stempel waktu, user, dan perubahan data tercatat dengan tepat.
+2. **Pengujian Approval Workflow**:
+   * Login sebagai `perencanaan`, buat kontrak baru (status `DRAFT` $\rightarrow$ klik **Ajukan Persetujuan**).
+   * Login sebagai `keuangan`, verifikasi kontrak pada tab Monitoring (status berubah menjadi `DIVERIFIKASI KEUANGAN`).
+   * Login sebagai `manajer`, setujui kontrak (status berubah menjadi `DISERTUJUI MANAJER`).
+3. **Pengujian Revisi Pagu (Adendum)**: Lakukan revisi pagu pada PRK, pastikan sisa pagu ter-update dan riwayat revisi (snapshot sebelum/sesudah) tampil di modal Riwayat Revisi.
+4. **Pengujian Heatmap**: Pastikan persentase penyerapan per bidang di Dashboard terhitung presisi berdasarkan status kontrak selesai per bidang.

@@ -22,7 +22,13 @@ import {
   Printer,
   ChevronDown,
   ChevronRight,
-  ShieldAlert
+  ShieldAlert,
+  History,
+  CheckCircle2,
+  XCircle,
+  Send,
+  Activity,
+  Layers
 } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, Area, AreaChart,
@@ -83,6 +89,23 @@ export default function App() {
   const [roleEditing, setRoleEditing] = useState(null);
   const [roleForm, setRoleForm] = useState({ name: '', deskripsi: '' });
 
+  // Audit Log State
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditSearch, setAuditSearch] = useState('');
+
+  // Revisi Pagu Modal States
+  const [revisionModalOpen, setRevisionModalOpen] = useState(false);
+  const [revisionTargetPrk, setRevisionTargetPrk] = useState(null);
+  const [revisionForm, setRevisionForm] = useState({ nilai_pagu_baru: 0, nomor_revisi: '', alasan_revisi: '' });
+  const [revisionHistoryModalOpen, setRevisionHistoryModalOpen] = useState(false);
+  const [revisionHistory, setRevisionHistory] = useState([]);
+
+  // Multi-level Approval Modal States
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [approvalTargetContract, setApprovalTargetContract] = useState(null);
+  const [approvalAction, setApprovalAction] = useState('');
+  const [approvalNotes, setApprovalNotes] = useState('');
+
   // Dynamic permission verification utility
   const hasPermission = (permissionCode) => {
     if (currentUser?.role === 'ADMIN') return true; // Superadmin bypass
@@ -93,6 +116,10 @@ export default function App() {
   const hasContractWriteAccess = hasPermission('contract:write');
   const hasUserManageAccess = hasPermission('user:manage');
   const hasRbacManageAccess = hasPermission('rbac:manage');
+  const hasAuditReadAccess = hasPermission('audit:read');
+  const hasPaguReviseAccess = hasPermission('pagu:revise');
+  const hasFinanceApproveAccess = hasPermission('contract:approve_finance');
+  const hasManagerApproveAccess = hasPermission('contract:approve_manager');
 
   // Authenticate user check on mount
   useEffect(() => {
@@ -105,7 +132,7 @@ export default function App() {
 
   // Open User submenu automatically if active tab relates to user settings
   useEffect(() => {
-    if (['users', 'rbac', 'roles'].includes(activeTab)) {
+    if (['users', 'rbac', 'roles', 'audit'].includes(activeTab)) {
       setUserMenuOpen(true);
     }
   }, [activeTab]);
@@ -267,6 +294,26 @@ export default function App() {
     }
   };
 
+  const fetchAuditLogsData = async () => {
+    const token = localStorage.getItem('token');
+    if (!token || (!hasAuditReadAccess && currentUser?.role !== 'ADMIN')) return;
+
+    try {
+      const response = await fetch(`${API_URL}/api/audit-logs`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAuditLogs(data || []);
+      }
+    } catch (err) {
+      console.error('Failed to load audit logs:', err);
+    }
+  };
+
   // Sync / Refresh all data
   const refreshAllData = () => {
     fetchPRKData();
@@ -279,6 +326,9 @@ export default function App() {
     if (hasRbacManageAccess) {
       fetchPermissionsData();
       fetchRBACMatrixData();
+    }
+    if (hasAuditReadAccess || currentUser?.role === 'ADMIN') {
+      fetchAuditLogsData();
     }
   };
 
@@ -511,6 +561,126 @@ export default function App() {
       refreshAllData();
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  // ==========================================
+  // REVISI PAGU (ADENDUM / APBD-P) ACTIONS
+  // ==========================================
+  const handleOpenRevisionModal = (prk) => {
+    setRevisionTargetPrk(prk);
+    setRevisionForm({
+      nilai_pagu_baru: prk.pagu_total || 0,
+      nomor_revisi: '',
+      alasan_revisi: ''
+    });
+    setRevisionModalOpen(true);
+  };
+
+  const handleSaveRevision = async (e) => {
+    e.preventDefault();
+    if (!revisionTargetPrk) return;
+
+    setFormLoading(true);
+    setError('');
+    setSuccess('');
+    const token = localStorage.getItem('token');
+
+    try {
+      const response = await fetch(`${API_URL}/api/prks/${revisionTargetPrk.id}/revise`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          nilai_pagu_baru: parseFloat(revisionForm.nilai_pagu_baru),
+          nomor_revisi: revisionForm.nomor_revisi,
+          alasan_revisi: revisionForm.alasan_revisi
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Gagal menyimpan revisi pagu');
+      }
+
+      setSuccess(`Revisi pagu (SK: ${revisionForm.nomor_revisi}) berhasil disimpan!`);
+      setRevisionModalOpen(false);
+      refreshAllData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleViewRevisionHistory = async (prk) => {
+    setRevisionTargetPrk(prk);
+    setRevisionHistory([]);
+    setRevisionHistoryModalOpen(true);
+    const token = localStorage.getItem('token');
+
+    try {
+      const response = await fetch(`${API_URL}/api/prks/${prk.id}/revisions`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setRevisionHistory(data || []);
+      }
+    } catch (err) {
+      console.error('Failed to load revision history:', err);
+    }
+  };
+
+  // ==========================================
+  // MULTI-LEVEL APPROVAL WORKFLOW ACTIONS
+  // ==========================================
+  const handleOpenApprovalModal = (contract, action) => {
+    setApprovalTargetContract(contract);
+    setApprovalAction(action);
+    setApprovalNotes('');
+    setApprovalModalOpen(true);
+  };
+
+  const handleProcessApproval = async (e) => {
+    e.preventDefault();
+    if (!approvalTargetContract || !approvalAction) return;
+
+    setFormLoading(true);
+    setError('');
+    setSuccess('');
+    const token = localStorage.getItem('token');
+
+    try {
+      const response = await fetch(`${API_URL}/api/contracts/${approvalTargetContract.id}/approval`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          action: approvalAction,
+          notes: approvalNotes
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Gagal memproses persetujuan kontrak');
+      }
+
+      setSuccess(`Status persetujuan kontrak #${approvalTargetContract.nomor_kontrak} berhasil diperbarui!`);
+      setApprovalModalOpen(false);
+      refreshAllData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setFormLoading(false);
     }
   };
 
@@ -914,12 +1084,12 @@ export default function App() {
             </button>
 
             {/* Collapsible Dropdown "Konfigurasi Akses" */}
-            {(hasUserManageAccess || hasRbacManageAccess) && (
+            {(hasUserManageAccess || hasRbacManageAccess || hasAuditReadAccess || currentUser?.role === 'ADMIN') && (
               <div className="space-y-0.5">
                 <button
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
                   className={`w-full flex items-center justify-between px-4 py-3 rounded-r-lg text-sm font-semibold transition-all ${
-                    ['users', 'rbac', 'roles'].includes(activeTab)
+                    ['users', 'rbac', 'roles', 'audit'].includes(activeTab)
                       ? 'bg-cyan-500/5 text-cyan-400'
                       : 'text-slate-400 hover:text-white hover:bg-white/5'
                   }`}
@@ -975,6 +1145,20 @@ export default function App() {
                         Pengaturan Peran
                       </button>
                     )}
+
+                    {(hasAuditReadAccess || currentUser?.role === 'ADMIN') && (
+                      <button
+                        onClick={() => setActiveTab('audit')}
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                          activeTab === 'audit'
+                            ? 'bg-cyan-500/10 text-cyan-400 font-bold'
+                            : 'text-slate-400 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <History size={14} />
+                        Log Audit Transaksi
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1017,6 +1201,7 @@ export default function App() {
               {activeTab === 'users' && 'Manajemen Pengguna'}
               {activeTab === 'rbac' && 'Matriks Hak Akses (RBAC)'}
               {activeTab === 'roles' && 'Pengaturan Peran (Role)'}
+              {activeTab === 'audit' && 'Log Audit Transaksi (Immutable Audit Trail)'}
             </h2>
             <p className="text-xs text-slate-400 mt-1">
               {activeTab === 'dashboard' && 'Pemetaan, monitoring, dan perlindungan pagu secara real-time.'}
@@ -1025,6 +1210,7 @@ export default function App() {
               {activeTab === 'users' && 'Kelola akun user internal PLN.'}
               {activeTab === 'rbac' && 'Kelola matriks pemetaan peran (role) ke dalam izin aksi dinamis.'}
               {activeTab === 'roles' && 'Kelola dan ubah nama peran user secara dinamis beserta deskripsinya.'}
+              {activeTab === 'audit' && 'Jejak audit permanen pencatatan mutasi anggaran, pengguna, dan transaksi.'}
             </p>
           </div>
           
@@ -1242,6 +1428,63 @@ export default function App() {
               </div>
             </div>
 
+            {/* Heatmap Penyerapan Per Bidang / Satker */}
+            <div className="glassmorphism p-6 rounded-2xl mb-8">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="text-base font-bold flex items-center gap-2">
+                    <Activity size={18} className="text-cyan-400" />
+                    Heatmap Penyerapan Anggaran Per Bidang / Satker
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">Pemeriksaan rasio penyerapan dana riil per unit pengusul (Bidang) secara real-time.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                {['PEMELIHARAAN', 'SCADA', 'KKU', 'TRANSAKSI ENERGI', 'K3 & LINGKUNGAN'].map((bidang) => {
+                  const bidangContracts = contracts.filter(c => (c.user_bidang || '').toUpperCase() === bidang || (bidang === 'K3 & LINGKUNGAN' && (c.user_bidang || '').toUpperCase().includes('K3')));
+                  const totalNilai = bidangContracts.reduce((sum, c) => sum + c.nilai_kontrak, 0);
+                  const realisasiNilai = bidangContracts.filter(c => c.status_proses === 'SELESAI').reduce((sum, c) => sum + c.nilai_kontrak, 0);
+                  const ratio = totalNilai > 0 ? (realisasiNilai / totalNilai) * 100 : 0;
+
+                  let statusColor = 'border-red-500/30 bg-red-500/5 text-red-400';
+                  let badgeText = 'KRITIS / LAMBAT';
+                  let barColor = 'bg-red-500';
+
+                  if (ratio >= 80) {
+                    statusColor = 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400';
+                    badgeText = 'OPTIMAL';
+                    barColor = 'bg-emerald-500';
+                  } else if (ratio >= 50) {
+                    statusColor = 'border-amber-500/30 bg-amber-500/5 text-amber-400';
+                    badgeText = 'MODERAT';
+                    barColor = 'bg-amber-500';
+                  }
+
+                  return (
+                    <div key={bidang} className={`p-4 rounded-xl border ${statusColor} relative overflow-hidden transition-all hover:scale-[1.02]`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-black tracking-wider uppercase text-slate-300 truncate">{bidang}</span>
+                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${statusColor}`}>{badgeText}</span>
+                      </div>
+                      <h4 className="text-lg font-black text-white">{ratio.toFixed(1)}%</h4>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden my-2">
+                        <div className={`h-full ${barColor} transition-all duration-500`} style={{ width: `${Math.min(ratio, 100)}%` }}></div>
+                      </div>
+                      <div className="flex justify-between items-center text-[10px] text-slate-400 mt-2">
+                        <span>Realisasi:</span>
+                        <span className="font-bold text-slate-200">{formatIDR(realisasiNilai)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[10px] text-slate-400 mt-0.5">
+                        <span>Total Komitmen:</span>
+                        <span className="font-semibold text-slate-300">{formatIDR(totalNilai)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Bottom Section: Recent Activities / Latest Contracts */}
             <div className="glassmorphism p-6 rounded-2xl">
               <div className="flex justify-between items-center mb-6">
@@ -1396,26 +1639,46 @@ export default function App() {
                               {prk.sisa_pagu <= 0 || isCritical ? 'KRITIS' : prk.sisa_pagu < (prk.pagu_total * 0.1) ? 'WARNING' : 'AMAN'}
                             </span>
                           </td>
-                          {hasPrkWriteAccess && (
-                            <td className="py-4 px-4 text-center">
-                              <div className="flex items-center justify-center gap-2">
+                          <td className="py-4 px-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {(hasPaguReviseAccess || hasPrkWriteAccess) && (
                                 <button
-                                  onClick={() => handleOpenPrkModal(prk)}
-                                  className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-lg transition-all"
-                                  title="Edit PRK & Pagu"
+                                  onClick={() => handleOpenRevisionModal(prk)}
+                                  className="px-2 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-400 rounded-lg transition-all text-[10px] font-bold flex items-center gap-1"
+                                  title="Revisi Pagu Anggaran (Adendum/APBD-P)"
                                 >
-                                  <Edit size={12} />
+                                  <RefreshCw size={12} />
+                                  Revisi
                                 </button>
-                                <button
-                                  onClick={() => handleDeletePrk(prk.id)}
-                                  className="p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-all"
-                                  title="Hapus PRK"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
-                            </td>
-                          )}
+                              )}
+                              <button
+                                onClick={() => handleViewRevisionHistory(prk)}
+                                className="px-2 py-1 bg-slate-500/10 hover:bg-slate-500/20 border border-slate-500/20 text-slate-300 rounded-lg transition-all text-[10px] font-bold flex items-center gap-1"
+                                title="Lihat Riwayat Revisi Pagu"
+                              >
+                                <History size={12} />
+                                Histori
+                              </button>
+                              {hasPrkWriteAccess && (
+                                <>
+                                  <button
+                                    onClick={() => handleOpenPrkModal(prk)}
+                                    className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-lg transition-all"
+                                    title="Edit PRK & Pagu"
+                                  >
+                                    <Edit size={12} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeletePrk(prk.id)}
+                                    className="p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-all"
+                                    title="Hapus PRK"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       );
                     })
@@ -1465,14 +1728,15 @@ export default function App() {
                     <th className="py-3 px-4">Nilai</th>
                     <th className="py-3 px-4">PRK Terkait</th>
                     <th className="py-3 px-4">Detail ND</th>
-                    <th className="py-3 px-4 text-center font-bold">Status</th>
-                    {hasContractWriteAccess && <th className="py-3 px-4 text-center font-bold">Aksi</th>}
+                    <th className="py-3 px-4 text-center font-bold">Status Realisasi</th>
+                    <th className="py-3 px-4 text-center font-bold">Workflow Approval</th>
+                    <th className="py-3 px-4 text-center font-bold">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-xs text-slate-300">
                   {contracts.length === 0 ? (
                     <tr>
-                      <td colSpan={hasContractWriteAccess ? 8 : 7} className="text-center py-8 text-xs text-slate-500">
+                      <td colSpan={9} className="text-center py-8 text-xs text-slate-500">
                         Belum ada kontrak terdaftar di database.
                       </td>
                     </tr>
@@ -1525,26 +1789,102 @@ export default function App() {
                               {row.status_proses} {isCritical && ' (BACKLOG)'}
                             </span>
                           </td>
-                          {hasContractWriteAccess && (
-                            <td className="py-4 px-4 text-center">
-                              <div className="flex items-center justify-center gap-2">
+                          <td className="py-4 px-4 text-center">
+                            <div className="space-y-1">
+                              <span className={`inline-block px-2 py-0.5 text-[8px] font-black rounded uppercase ${
+                                row.approval_status === 'APPROVED_MANAGER'
+                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                  : row.approval_status === 'VERIFIED_FINANCE'
+                                  ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                  : row.approval_status === 'PENDING_APPROVAL'
+                                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                  : row.approval_status === 'REJECTED'
+                                  ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                  : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
+                              }`}>
+                                {row.approval_status === 'APPROVED_MANAGER' ? '✓ SETUJU MANAJER'
+                                 : row.approval_status === 'VERIFIED_FINANCE' ? 'VERIFIKASI KEU'
+                                 : row.approval_status === 'PENDING_APPROVAL' ? 'DIAJUKAN BIDANG'
+                                 : row.approval_status === 'REJECTED' ? '✕ DITOLAK'
+                                 : 'DRAFT'}
+                              </span>
+                              {row.approval_notes && (
+                                <div className="text-[8px] text-amber-300/80 italic max-w-[120px] truncate" title={row.approval_notes}>
+                                  Catatan: {row.approval_notes}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <div className="flex flex-wrap items-center justify-center gap-1.5">
+                              {(row.approval_status === 'DRAFT' || row.approval_status === 'REJECTED' || !row.approval_status) && (hasContractWriteAccess || currentUser?.role === 'PERENCANAAN' || currentUser?.role === 'ADMIN') && (
                                 <button
-                                  onClick={() => handleOpenContractModal(row)}
-                                  className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-lg transition-all"
-                                  title="Edit Kontrak"
+                                  onClick={() => handleOpenApprovalModal(row, 'SUBMIT')}
+                                  className="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
+                                  title="Ajukan Persetujuan Workflow"
                                 >
-                                  <Edit size={12} />
+                                  <Send size={11} /> Ajukan
                                 </button>
-                                <button
-                                  onClick={() => handleDeleteContract(row.id)}
-                                  className="p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-all"
-                                  title="Hapus Kontrak"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
-                            </td>
-                          )}
+                              )}
+
+                              {row.approval_status === 'PENDING_APPROVAL' && (hasFinanceApproveAccess || currentUser?.role === 'KEUANGAN' || currentUser?.role === 'ADMIN') && (
+                                <>
+                                  <button
+                                    onClick={() => handleOpenApprovalModal(row, 'VERIFY')}
+                                    className="px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
+                                    title="Verifikasi Dokumen Keuangan"
+                                  >
+                                    <CheckCircle2 size={11} /> Verifikasi
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenApprovalModal(row, 'REJECT')}
+                                    className="px-2 py-1 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
+                                    title="Tolak Pengajuan Kontrak"
+                                  >
+                                    <XCircle size={11} /> Tolak
+                                  </button>
+                                </>
+                              )}
+
+                              {row.approval_status === 'VERIFIED_FINANCE' && (hasManagerApproveAccess || currentUser?.role === 'MANAJER' || currentUser?.role === 'ADMIN') && (
+                                <>
+                                  <button
+                                    onClick={() => handleOpenApprovalModal(row, 'APPROVE')}
+                                    className="px-2 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
+                                    title="Persetujuan Final Manajer"
+                                  >
+                                    <CheckCircle2 size={11} /> Setujui
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenApprovalModal(row, 'REJECT')}
+                                    className="px-2 py-1 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
+                                    title="Tolak Pengajuan Kontrak"
+                                  >
+                                    <XCircle size={11} /> Tolak
+                                  </button>
+                                </>
+                              )}
+
+                              {hasContractWriteAccess && (
+                                <>
+                                  <button
+                                    onClick={() => handleOpenContractModal(row)}
+                                    className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-lg transition-all"
+                                    title="Edit Kontrak"
+                                  >
+                                    <Edit size={12} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteContract(row.id)}
+                                    className="p-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-all"
+                                    title="Hapus Kontrak"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       );
                     })
@@ -1767,7 +2107,326 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* TAB 7: LOG AUDIT TRANSAKSI */}
+        {activeTab === 'audit' && (hasAuditReadAccess || currentUser?.role === 'ADMIN') && (
+          <div className="glassmorphism p-6 rounded-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-base font-bold flex items-center gap-2">
+                  <History size={18} className="text-cyan-400" />
+                  Jejak Audit Mutasi Anggaran & Transaksi (Immutable Audit Trail)
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">Catatan permanen perubahan data PRK, Pagu, Kontrak, dan Otentikasi untuk akuntabilitas & kepatuhan audit.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Cari user, aksi, atau entitas..."
+                  value={auditSearch}
+                  onChange={(e) => setAuditSearch(e.target.value)}
+                  className="px-3 py-1.5 bg-[#0d1527] border border-white/10 rounded-xl text-xs text-white outline-none focus:border-cyan-500/50 w-64"
+                />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-white/5 text-slate-400 text-[10px] uppercase tracking-wider">
+                    <th className="py-3 px-4 font-bold">Waktu</th>
+                    <th className="py-3 px-4 font-bold">Pengguna</th>
+                    <th className="py-3 px-4 font-bold">Peran</th>
+                    <th className="py-3 px-4 font-bold">Aksi (Action)</th>
+                    <th className="py-3 px-4 font-bold">Entitas Target</th>
+                    <th className="py-3 px-4 font-bold">Nilai Lama (Before)</th>
+                    <th className="py-3 px-4 font-bold">Nilai Baru (After)</th>
+                    <th className="py-3 px-4 font-bold text-center">IP Address</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-slate-300">
+                  {auditLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-8 text-slate-500">Belum ada catatan log audit di database.</td>
+                    </tr>
+                  ) : (
+                    auditLogs
+                      .filter(log => 
+                        (log.username || '').toLowerCase().includes(auditSearch.toLowerCase()) ||
+                        (log.action || '').toLowerCase().includes(auditSearch.toLowerCase()) ||
+                        (log.entity || '').toLowerCase().includes(auditSearch.toLowerCase()) ||
+                        (log.new_value || '').toLowerCase().includes(auditSearch.toLowerCase())
+                      )
+                      .map((log) => (
+                        <tr key={log.id} className="hover:bg-white/5 transition-all">
+                          <td className="py-3 px-4 text-slate-400 font-mono text-[10px]">
+                            {log.created_at ? new Date(log.created_at).toLocaleString('id-ID') : '-'}
+                          </td>
+                          <td className="py-3 px-4 font-bold text-cyan-400">{log.username}</td>
+                          <td className="py-3 px-4">
+                            <span className="px-1.5 py-0.5 text-[8px] font-black rounded bg-cyan-500/10 text-cyan-400 uppercase">
+                              {log.user_role}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 text-[9px] font-bold rounded uppercase ${
+                              log.action.includes('CREATE') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                              log.action.includes('REVISE') || log.action.includes('UPDATE') ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                              log.action.includes('DELETE') || log.action.includes('REJECT') ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                              'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                            }`}>
+                              {log.action}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-slate-200">
+                            {log.entity} #{log.entity_id}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[10px] text-slate-400 truncate max-w-[150px]" title={log.old_value}>
+                            {log.old_value || '-'}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[10px] text-emerald-300 truncate max-w-[200px]" title={log.new_value}>
+                            {log.new_value || '-'}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[10px] text-slate-500 text-center">
+                            {log.ip_address || '127.0.0.1'}
+                          </td>
+                        </tr>
+                      ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </main>
+
+      {/* ==========================================
+          MODAL DIALOGS (GLASSMORPHIC BACKDROP)
+         ========================================== */}
+      
+      {/* 5. REVISI PAGU MODAL */}
+      {revisionModalOpen && revisionTargetPrk && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn no-print">
+          <div className="w-full max-w-md glassmorphism p-8 rounded-2xl relative border border-white/10">
+            <button 
+              onClick={() => setRevisionModalOpen(false)}
+              className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg transition-all"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-lg font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 flex items-center gap-2">
+              <RefreshCw className="text-cyan-400" size={20} />
+              Revisi Pagu Anggaran (Adendum / APBD-P)
+            </h3>
+            <p className="text-xs text-slate-400 mb-6">
+              PRK: <strong className="text-cyan-400 font-mono">{revisionTargetPrk.nomor_prk}</strong> ({revisionTargetPrk.uraian_prk})
+            </p>
+
+            <form onSubmit={handleSaveRevision} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Nilai Pagu Saat Ini
+                </label>
+                <div className="px-3 py-2 bg-slate-800/50 border border-white/5 rounded-xl text-slate-400 text-sm font-mono font-bold">
+                  {formatIDR(revisionTargetPrk.pagu_total || 0)}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Nilai Pagu Baru (Rp) *
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={revisionForm.nilai_pagu_baru}
+                  onChange={(e) => setRevisionForm({...revisionForm, nilai_pagu_baru: e.target.value})}
+                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/10 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50 font-mono font-bold"
+                  placeholder="Masukkan nilai pagu hasil revisi/adendum..."
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Nomor SK / Adendum *
+                </label>
+                <input
+                  type="text"
+                  value={revisionForm.nomor_revisi}
+                  onChange={(e) => setRevisionForm({...revisionForm, nomor_revisi: e.target.value})}
+                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/10 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50 font-mono"
+                  placeholder="Contoh: SK-012/ADENDUM-PLN/2026"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Alasan Pergeseran / Revisi *
+                </label>
+                <textarea
+                  value={revisionForm.alasan_revisi}
+                  onChange={(e) => setRevisionForm({...revisionForm, alasan_revisi: e.target.value})}
+                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/10 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50 h-20 resize-none"
+                  placeholder="Jelaskan dasar pertimbangan pergeseran pagu anggaran ini..."
+                  required
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setRevisionModalOpen(false)}
+                  className="w-1/2 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={formLoading}
+                  className="w-1/2 py-2.5 px-4 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-cyan-500/20 disabled:opacity-50"
+                >
+                  {formLoading ? 'Simpan...' : 'Simpan Revisi Pagu'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. RIWAYAT REVISI PAGU MODAL */}
+      {revisionHistoryModalOpen && revisionTargetPrk && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn no-print">
+          <div className="w-full max-w-2xl glassmorphism p-8 rounded-2xl relative border border-white/10">
+            <button 
+              onClick={() => setRevisionHistoryModalOpen(false)}
+              className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg transition-all"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-lg font-bold mb-1 text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 flex items-center gap-2">
+              <History className="text-cyan-400" size={20} />
+              Riwayat Revisi Pagu & Snapshot Adendum
+            </h3>
+            <p className="text-xs text-slate-400 mb-6">
+              PRK: <strong className="text-cyan-400 font-mono">{revisionTargetPrk.nomor_prk}</strong> ({revisionTargetPrk.uraian_prk})
+            </p>
+
+            <div className="overflow-x-auto max-h-96">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-white/5 text-slate-400 text-[10px] uppercase tracking-wider">
+                    <th className="py-2.5 px-4 font-bold">Waktu & SK</th>
+                    <th className="py-2.5 px-4 font-bold">Pagu Sebelum</th>
+                    <th className="py-2.5 px-4 font-bold">Pagu Setelah</th>
+                    <th className="py-2.5 px-4 font-bold">Alasan Revisi</th>
+                    <th className="py-2.5 px-4 font-bold">Petugas</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-slate-300">
+                  {revisionHistory.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-8 text-slate-500">Belum ada catatan revisi pagu untuk PRK ini.</td>
+                    </tr>
+                  ) : (
+                    revisionHistory.map((rev) => (
+                      <tr key={rev.id} className="hover:bg-white/5">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-cyan-400 font-mono">{rev.nomor_revisi}</div>
+                          <div className="text-[9px] text-slate-400">
+                            {rev.created_at ? new Date(rev.created_at).toLocaleString('id-ID') : '-'}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-slate-400 line-through">
+                          {formatIDR(rev.nilai_pagu_lama)}
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-emerald-400">
+                          {formatIDR(rev.nilai_pagu_baru)}
+                        </td>
+                        <td className="py-3 px-4 text-slate-300 max-w-xs">{rev.alasan_revisi}</td>
+                        <td className="py-3 px-4 font-semibold text-slate-400">{rev.created_by}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. APPROVAL WORKFLOW MODAL */}
+      {approvalModalOpen && approvalTargetContract && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn no-print">
+          <div className="w-full max-w-md glassmorphism p-8 rounded-2xl relative border border-white/10">
+            <button 
+              onClick={() => setApprovalModalOpen(false)}
+              className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg transition-all"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-lg font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 flex items-center gap-2">
+              <CheckCircle2 className="text-cyan-400" size={20} />
+              Persetujuan Workflow Kontrak
+            </h3>
+            <p className="text-xs text-slate-400 mb-6">
+              Kontrak: <strong className="text-cyan-400 font-mono">#{approvalTargetContract.nomor_kontrak}</strong> ({approvalTargetContract.judul_pekerjaan})
+            </p>
+
+            <form onSubmit={handleProcessApproval} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Aksi Persetujuan
+                </label>
+                <div className={`p-3 rounded-xl border text-xs font-bold uppercase tracking-wider ${
+                  approvalAction === 'APPROVE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                  approvalAction === 'VERIFY' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                  approvalAction === 'SUBMIT' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                  'bg-red-500/10 text-red-400 border-red-500/20'
+                }`}>
+                  {approvalAction === 'APPROVE' && '✓ PERSETUJUAN FINAL MANAJER'}
+                  {approvalAction === 'VERIFY' && '✓ VERIFIKASI DOKUMEN KEUANGAN'}
+                  {approvalAction === 'SUBMIT' && '🚀 PENGAJUAN PERSETUJUAN KONTRAK'}
+                  {approvalAction === 'REJECT' && '✕ PENOLAKAN PENGAJUAN KONTRAK'}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Catatan / Tanggapan {approvalAction === 'REJECT' && '*'}
+                </label>
+                <textarea
+                  value={approvalNotes}
+                  onChange={(e) => setApprovalNotes(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/10 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50 h-24 resize-none"
+                  placeholder={approvalAction === 'REJECT' ? 'Tuliskan alasan penolakan dan instruksi perbaikan...' : 'Tambahkan catatan opsional...'}
+                  required={approvalAction === 'REJECT'}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setApprovalModalOpen(false)}
+                  className="w-1/2 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={formLoading}
+                  className={`w-1/2 py-2.5 px-4 text-white text-xs font-bold rounded-xl transition-all shadow-md disabled:opacity-50 ${
+                    approvalAction === 'REJECT' ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 shadow-cyan-500/20'
+                  }`}
+                >
+                  {formLoading ? 'Memproses...' : 'Konfirmasi Aksi'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ==========================================
           MODAL DIALOGS (GLASSMORPHIC BACKDROP)
