@@ -17,6 +17,7 @@ import {
   Settings,
   UserPlus,
   X,
+  Menu,
   CheckSquare,
   FileSpreadsheet,
   Printer,
@@ -57,6 +58,7 @@ export default function App() {
   // Navigation Routing State
   const [activeTab, setActiveTab] = useState('dashboard');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Form Loading states
   const [formLoading, setFormLoading] = useState(false);
@@ -1027,30 +1029,79 @@ export default function App() {
     return <Login onLoginSuccess={setCurrentUser} />;
   }
 
+  const handleTabSelect = (tab) => {
+    setActiveTab(tab);
+    setMobileMenuOpen(false);
+  };
+
   return (
-    <div className="flex h-screen overflow-hidden bg-[#090d16] text-white">
-      {/* Sidebar - HIDDEN DURING PRINT */}
-      <aside className="w-64 glassmorphism-sidebar flex flex-col justify-between p-6 shrink-0 no-print">
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-[#090d16] text-white">
+      {/* Mobile Top Header */}
+      <header className="flex md:hidden items-center justify-between px-4 py-3 bg-[#0a101e] border-b border-white/10 shrink-0 z-30 no-print">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-extrabold text-xs">
+            ⚡
+          </div>
+          <div>
+            <h1 className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 text-sm leading-none">
+              Si Monang
+            </h1>
+            <span className="text-[8px] tracking-wider text-cyan-400/80 font-bold uppercase">
+              Innovation Gateway 2027
+            </span>
+          </div>
+        </div>
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="p-2 text-slate-300 hover:text-white bg-white/5 border border-white/10 rounded-lg transition-all"
+          aria-label="Toggle Navigation Menu"
+        >
+          {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+      </header>
+
+      {/* Mobile Backdrop */}
+      {mobileMenuOpen && (
+        <div
+          onClick={() => setMobileMenuOpen(false)}
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 md:hidden animate-fadeIn"
+        />
+      )}
+
+      {/* Sidebar - HIDDEN DURING PRINT, RESPONSIVE DRAWER ON MOBILE */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-72 md:w-64 glassmorphism-sidebar flex flex-col justify-between p-6 shrink-0 no-print transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         <div>
-          {/* Logo */}
-          <div className="flex items-center gap-3 mb-8">
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-extrabold text-sm">
-              ⚡
+          {/* Logo & Mobile Close */}
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-extrabold text-sm">
+                ⚡
+              </div>
+              <div>
+                <h1 className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 leading-none">
+                  Si Monang
+                </h1>
+                <span className="text-[9px] tracking-wider text-cyan-400/80 font-bold uppercase">
+                  Sistem Informasi Anggaran
+                </span>
+              </div>
             </div>
-            <div>
-              <h1 className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 leading-none">
-                Si Monang
-              </h1>
-              <span className="text-[9px] tracking-wider text-cyan-400/80 font-bold uppercase">
-                Sistem Informasi Anggaran
-              </span>
-            </div>
+            <button
+              onClick={() => setMobileMenuOpen(false)}
+              className="md:hidden p-1.5 text-slate-400 hover:text-white rounded-lg bg-white/5"
+            >
+              <X size={18} />
+            </button>
           </div>
 
           {/* Navigation Links */}
           <nav className="space-y-1">
             <button
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => handleTabSelect('dashboard')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-r-lg text-sm font-semibold transition-all ${
                 activeTab === 'dashboard'
                   ? 'bg-cyan-500/10 border-l-2 border-cyan-500 text-cyan-400'
@@ -1061,7 +1112,7 @@ export default function App() {
               Dashboard
             </button>
             <button
-              onClick={() => setActiveTab('rekap')}
+              onClick={() => handleTabSelect('rekap')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-r-lg text-sm font-semibold transition-all ${
                 activeTab === 'rekap'
                   ? 'bg-cyan-500/10 border-l-2 border-cyan-500 text-cyan-400'
@@ -1072,7 +1123,7 @@ export default function App() {
               Rekap PRK
             </button>
             <button
-              onClick={() => setActiveTab('monitoring')}
+              onClick={() => handleTabSelect('monitoring')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-r-lg text-sm font-semibold transition-all ${
                 activeTab === 'monitoring'
                   ? 'bg-cyan-500/10 border-l-2 border-cyan-500 text-cyan-400'
@@ -1106,7 +1157,7 @@ export default function App() {
                   <div className="pl-6 border-l border-white/5 mt-0.5 space-y-0.5">
                     {hasUserManageAccess && (
                       <button
-                        onClick={() => setActiveTab('users')}
+                        onClick={() => handleTabSelect('users')}
                         className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
                           activeTab === 'users'
                             ? 'bg-cyan-500/10 text-cyan-400 font-bold'
@@ -1120,7 +1171,7 @@ export default function App() {
                     
                     {hasRbacManageAccess && (
                       <button
-                        onClick={() => setActiveTab('rbac')}
+                        onClick={() => handleTabSelect('rbac')}
                         className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
                           activeTab === 'rbac'
                             ? 'bg-cyan-500/10 text-cyan-400 font-bold'
@@ -1134,7 +1185,7 @@ export default function App() {
 
                     {hasRbacManageAccess && (
                       <button
-                        onClick={() => setActiveTab('roles')}
+                        onClick={() => handleTabSelect('roles')}
                         className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
                           activeTab === 'roles'
                             ? 'bg-cyan-500/10 text-cyan-400 font-bold'
@@ -1148,7 +1199,7 @@ export default function App() {
 
                     {(hasAuditReadAccess || currentUser?.role === 'ADMIN') && (
                       <button
-                        onClick={() => setActiveTab('audit')}
+                        onClick={() => handleTabSelect('audit')}
                         className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
                           activeTab === 'audit'
                             ? 'bg-cyan-500/10 text-cyan-400 font-bold'
@@ -1169,7 +1220,7 @@ export default function App() {
         {/* User Card */}
         <div className="border-t border-white/5 pt-4">
           <div className="flex items-center gap-3 mb-4 p-2 bg-white/5 rounded-xl border border-white/5">
-            <div className="w-10 h-10 rounded-lg bg-cyan-500/10 flex items-center justify-center border border-cyan-500/20 text-cyan-400">
+            <div className="w-10 h-10 rounded-lg bg-cyan-500/10 flex items-center justify-center border border-cyan-500/20 text-cyan-400 shrink-0">
               <UserCheck size={20} />
             </div>
             <div className="overflow-hidden">
@@ -1190,9 +1241,9 @@ export default function App() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-8">
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
         {/* Header */}
-        <header className="flex justify-between items-center mb-6">
+        <header className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
           <div>
             <h2 className="text-2xl font-extrabold tracking-tight">
               {activeTab === 'dashboard' && 'Dashboard Anggaran 2026'}
@@ -1283,7 +1334,7 @@ export default function App() {
         {activeTab === 'dashboard' && (
           <>
             {/* KPI Row - 4 Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
               {/* Card 1: Pagu Terbit */}
               <div className="glassmorphism glow-card p-6 rounded-2xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl"></div>
@@ -1440,7 +1491,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {['PEMELIHARAAN', 'SCADA', 'KKU', 'TRANSAKSI ENERGI', 'K3 & LINGKUNGAN'].map((bidang) => {
                   const bidangContracts = contracts.filter(c => (c.user_bidang || '').toUpperCase() === bidang || (bidang === 'K3 & LINGKUNGAN' && (c.user_bidang || '').toUpperCase().includes('K3')));
                   const totalNilai = bidangContracts.reduce((sum, c) => sum + c.nilai_kontrak, 0);
@@ -2207,7 +2258,7 @@ export default function App() {
       {/* 5. REVISI PAGU MODAL */}
       {revisionModalOpen && revisionTargetPrk && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn no-print">
-          <div className="w-full max-w-md glassmorphism p-8 rounded-2xl relative border border-white/10">
+          <div className="w-full max-w-md glassmorphism p-6 sm:p-8 rounded-2xl relative border border-white/10 max-h-[90vh] overflow-y-auto">
             <button 
               onClick={() => setRevisionModalOpen(false)}
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg transition-all"
@@ -2298,7 +2349,7 @@ export default function App() {
       {/* 6. RIWAYAT REVISI PAGU MODAL */}
       {revisionHistoryModalOpen && revisionTargetPrk && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn no-print">
-          <div className="w-full max-w-2xl glassmorphism p-8 rounded-2xl relative border border-white/10">
+          <div className="w-full max-w-2xl glassmorphism p-6 sm:p-8 rounded-2xl relative border border-white/10 max-h-[90vh] overflow-y-auto">
             <button 
               onClick={() => setRevisionHistoryModalOpen(false)}
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg transition-all"
@@ -2359,7 +2410,7 @@ export default function App() {
       {/* 7. APPROVAL WORKFLOW MODAL */}
       {approvalModalOpen && approvalTargetContract && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn no-print">
-          <div className="w-full max-w-md glassmorphism p-8 rounded-2xl relative border border-white/10">
+          <div className="w-full max-w-md glassmorphism p-6 sm:p-8 rounded-2xl relative border border-white/10 max-h-[90vh] overflow-y-auto">
             <button 
               onClick={() => setApprovalModalOpen(false)}
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg transition-all"
@@ -2435,7 +2486,7 @@ export default function App() {
       {/* 1. PRK MODAL */}
       {prkModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn no-print">
-          <div className="w-full max-w-lg glassmorphism p-8 rounded-2xl relative border border-white/10">
+          <div className="w-full max-w-lg glassmorphism p-6 sm:p-8 rounded-2xl relative border border-white/10 max-h-[90vh] overflow-y-auto">
             <button 
               onClick={() => setPrkModalOpen(false)}
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg transition-all"
@@ -2547,7 +2598,7 @@ export default function App() {
       {/* 2. CONTRACT MODAL */}
       {contractModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn no-print">
-          <div className="w-full max-w-lg glassmorphism p-8 rounded-2xl relative border border-white/10 max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-lg glassmorphism p-6 sm:p-8 rounded-2xl relative border border-white/10 max-h-[90vh] overflow-y-auto">
             <button 
               onClick={() => setContractModalOpen(false)}
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg transition-all"
@@ -2741,7 +2792,7 @@ export default function App() {
       {/* 3. USER MODAL */}
       {userModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn no-print">
-          <div className="w-full max-w-md glassmorphism p-8 rounded-2xl relative border border-white/10">
+          <div className="w-full max-w-md glassmorphism p-6 sm:p-8 rounded-2xl relative border border-white/10 max-h-[90vh] overflow-y-auto">
             <button 
               onClick={() => setUserModalOpen(false)}
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg transition-all"
@@ -2749,82 +2800,81 @@ export default function App() {
               <X size={18} />
             </button>
             <h3 className="text-lg font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300">
-              {userEditing ? 'Edit Pengaturan User' : 'Daftarkan User Baru'}
+              {userEditing ? 'Edit Data Pengguna' : 'Tambah Pengguna Baru'}
             </h3>
             
             <form onSubmit={handleSaveUser} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Nama Lengkap
+                  Nama Lengkap *
                 </label>
                 <input
                   type="text"
                   value={userForm.name}
                   onChange={(e) => setUserForm({...userForm, name: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/5 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50"
-                  placeholder="Contoh: Andi Wijaya"
+                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/10 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50"
+                  placeholder="e.g. Ahmad Fauzi"
                   required
                 />
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Username
+                  Username *
                 </label>
                 <input
                   type="text"
                   value={userForm.username}
                   onChange={(e) => setUserForm({...userForm, username: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/5 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50 font-mono"
-                  placeholder="Username login"
+                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/10 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50"
+                  placeholder="e.g. fauzi123"
                   required
                 />
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Password {userEditing && <span className="text-[9px] text-slate-500 lowercase">(kosongkan jika tidak diubah)</span>}
+                  Password {userEditing ? '(Kosongkan jika tidak diubah)' : '*'}
                 </label>
                 <input
                   type="password"
                   value={userForm.password}
                   onChange={(e) => setUserForm({...userForm, password: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/5 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50 font-mono"
-                  placeholder={userEditing ? "••••••" : "Minimal 6 karakter"}
+                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/10 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50"
+                  placeholder="••••••••"
                   required={!userEditing}
                 />
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Role Otorisasi
+                  Peran (Role) *
                 </label>
                 <select
                   value={userForm.role}
                   onChange={(e) => setUserForm({...userForm, role: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/5 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50 font-bold"
+                  className="w-full px-3 py-2 bg-[#0d1527] border border-white/10 rounded-xl text-white text-sm outline-none focus:border-cyan-500/50"
                   required
                 >
+                  <option value="">-- Pilih Peran User --</option>
                   {roles.map((r) => (
-                    <option key={r.name} value={r.name}>
-                      {r.name} {r.deskripsi ? `(${r.deskripsi})` : ''}
-                    </option>
+                    <option key={r.id || r.name} value={r.name}>{r.name} - {r.deskripsi}</option>
                   ))}
                 </select>
               </div>
 
-              <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/5">
+              <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
                 <button
                   type="button"
                   onClick={() => setUserModalOpen(false)}
-                  className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-semibold"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={formLoading}
-                  className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                  className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50"
                 >
                   {formLoading ? 'Menyimpan...' : 'Simpan User'}
                 </button>
@@ -2837,7 +2887,7 @@ export default function App() {
       {/* 4. ROLE MODAL */}
       {roleModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn no-print">
-          <div className="w-full max-w-md glassmorphism p-8 rounded-2xl relative border border-white/10">
+          <div className="w-full max-w-md glassmorphism p-6 sm:p-8 rounded-2xl relative border border-white/10 max-h-[90vh] overflow-y-auto">
             <button 
               onClick={() => setRoleModalOpen(false)}
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg transition-all"
